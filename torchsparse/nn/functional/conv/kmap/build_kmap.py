@@ -63,12 +63,28 @@ def build_kernel_map(
     kernel_size = make_ntuple(kernel_size, ndim=3)
     padding = make_ntuple(padding, ndim=3)
     if spatial_range is not None:
-        new_spatial_range = [0, 0, 0]
-        for i in range(len(new_spatial_range)):
-            new_spatial_range[i] = (
-                spatial_range[i + 1] + 2 * padding[i] - (kernel_size[i] - 1) - 1
-            ) // stride[i] + 1
-        new_spatial_range = spatial_range[:1] + tuple(new_spatial_range)
+        if generative:
+            batch_prefix = tuple(spatial_range[:1])
+            new_sizes = []
+            for dim in range(3):
+                if dim + 1 < len(spatial_range):
+                    size_in = int(spatial_range[dim + 1])
+                else:
+                    size_in = 0
+                if size_in <= 0:
+                    new_sizes.append(0)
+                    continue
+                out_size = (size_in - 1) * stride[dim] - 2 * padding[dim] + (kernel_size[dim] - 1) + 1
+                new_sizes.append(out_size)
+            new_spatial_range = batch_prefix + tuple(new_sizes)
+        else:
+            new_spatial_range = [0, 0, 0]
+            for i in range(len(new_spatial_range)):
+                ref = spatial_range[i + 1] if i + 1 < len(spatial_range) else 0
+                new_spatial_range[i] = (
+                    ref + 2 * padding[i] - (kernel_size[i] - 1) - 1
+                ) // stride[i] + 1
+            new_spatial_range = spatial_range[:1] + tuple(new_spatial_range)
         kmap["spatial_range"] = new_spatial_range
     else:
         new_spatial_range = None

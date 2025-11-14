@@ -1,3 +1,5 @@
+## 这是 torchsparse/nn/functional/conv/conv.py 为了给你看 generative 的实现
+
 from typing import List, Dict, Optional, Tuple, Union
 
 # import numpy as np
@@ -135,12 +137,43 @@ def conv3d(
                 (tensor_stride, kernel_size, stride, dilation)
             )
 
+            if kmap is None:
+                hashmap_keys, hashmap_vals = None, None
+                kmap = F.build_kernel_map(
+                    coords,
+                    feats.shape[0],
+                    kernel_size,
+                    stride,
+                    padding,
+                    hashmap_keys,
+                    hashmap_vals,
+                    input.spatial_range,
+                    kmap_mode,
+                    dataflow,
+                    downsample_mode=config.downsample_mode,
+                    training=training,
+                    ifsort=config.ifsort,
+                    split_mask_num=config.split_mask_num,
+                    split_mask_num_bwd=config.split_mask_num_bwd,
+                )
+
+                hashmap = [kmap["hashmap_keys"], kmap["hashmap_vals"]]
+
+                input._caches.kmaps[(input.stride, kernel_size, stride, dilation)] = kmap
+                input._caches.kmaps[(tensor_stride, kernel_size, stride, dilation)] = kmap
+                input._caches.hashmaps[input.stride] = hashmap
+
             kmap = F.transpose_kernel_map(
                 kmap,
                 config.ifsort,
                 training=training,
                 split_mask_num=config.split_mask_num,
                 split_mask_num_bwd=config.split_mask_num_bwd,
+            )
+
+            input._caches.cmaps[tensor_stride] = (
+                kmap["coords"],
+                kmap.get("spatial_range"),
             )
 
             feats = ConvolutionFunction.apply(

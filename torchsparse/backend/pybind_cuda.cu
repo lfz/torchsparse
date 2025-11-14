@@ -21,6 +21,7 @@
 #include "others/query_cuda.h"
 #include "others/reduce_bitmask_cuda.h"
 #include "others/reorder_map_cuda.h"
+#include "others/pooling_cuda.h"
 #include "others/sparsemapping_cuda.h"
 #include "voxelize/voxelize_cpu.h"
 #include "voxelize/voxelize_cuda.h"
@@ -80,4 +81,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("downsample_cuda", &downsample_cuda);
   m.def("count_cpu", &count_cpu);
   m.def("count_cuda", &count_cuda);
+  m.def("sparse_maxpool_forward_cuda", &sparse_maxpool_forward_cuda);
+  m.def("sparse_maxpool_backward_cuda", &sparse_maxpool_backward_cuda);
+  m.def("sparse_avgpool_forward_cuda", &sparse_avgpool_forward_cuda);
+  m.def("sparse_avgpool_backward_cuda", &sparse_avgpool_backward_cuda);
 }
