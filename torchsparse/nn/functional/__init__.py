@@ -6,4 +6,5 @@ from .devoxelize import *
 from .hash import *
 from .pooling import *
 from .query import *
+from .upsample import *
 from .voxelize import *
