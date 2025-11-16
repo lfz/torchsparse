@@ -11,7 +11,40 @@ from torchsparse.utils import make_ntuple
 
 from .func import *
 
-__all__ = ["conv3d"]
+__all__ = ["conv3d", "depthwise_conv3d"]
+
+
+def _expand_depthwise_weight(weight: torch.Tensor, depth_multiplier: int) -> torch.Tensor:
+    if depth_multiplier <= 0:
+        raise ValueError("depth_multiplier must be a positive integer.")
+
+    if weight.shape[-1] != depth_multiplier:
+        raise ValueError(
+            f"Expected last dim of depthwise weight ({weight.shape[-1]}) "
+            f"to match depth_multiplier ({depth_multiplier})."
+        )
+
+    if weight.dim() == 2:
+        in_channels = weight.size(0)
+        diag = torch.eye(
+            in_channels, dtype=weight.dtype, device=weight.device
+        ).unsqueeze(-1)
+        expanded = (diag * weight.unsqueeze(1)).reshape(
+            in_channels, in_channels * depth_multiplier
+        )
+    elif weight.dim() == 3:
+        kernel_volume, in_channels, _ = weight.shape
+        diag = torch.eye(
+            in_channels, dtype=weight.dtype, device=weight.device
+        ).view(1, in_channels, in_channels, 1)
+        expanded = (weight.unsqueeze(2) * diag).reshape(
+            kernel_volume, in_channels, in_channels * depth_multiplier
+        )
+    else:
+        raise ValueError(
+            f"Expected depthwise weight to have 2 or 3 dims, got {weight.dim()}."
+        )
+    return expanded
 
 
 def conv3d(
@@ -241,3 +274,34 @@ def conv3d(
         output.stride, (output.coords, output.spatial_range)
     )
     return output
+
+
+def depthwise_conv3d(
+    input: SparseTensor,
+    weight: torch.Tensor,
+    kernel_size: Union[int, List[int], Tuple[int, ...]],
+    bias: Optional[torch.Tensor] = None,
+    stride: Union[int, List[int], Tuple[int, ...]] = 1,
+    padding: Union[int, Tuple[int, ...]] = 0,
+    dilation: Union[int, Tuple[int, ...]] = 1,
+    depth_multiplier: Optional[int] = None,
+    config: Dict = None,
+    training: bool = False,
+) -> SparseTensor:
+    if depth_multiplier is None:
+        depth_multiplier = weight.shape[-1]
+
+    expanded_weight = _expand_depthwise_weight(weight, depth_multiplier)
+    return conv3d(
+        input=input,
+        weight=expanded_weight,
+        kernel_size=kernel_size,
+        bias=bias,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        config=config,
+        transposed=False,
+        generative=False,
+        training=training,
+    )

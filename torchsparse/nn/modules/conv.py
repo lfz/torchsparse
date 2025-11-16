@@ -16,7 +16,7 @@ from torchsparse import SparseTensor
 from torchsparse.nn import functional as F
 from torchsparse.utils import make_ntuple
 
-__all__ = ["Conv3d"]
+__all__ = ["Conv3d", "DepthwiseConv3d"]
 
 
 class Conv3d(nn.Module):
@@ -105,6 +105,88 @@ class Conv3d(nn.Module):
             dilation=self.dilation,
             transposed=self.transposed,
             generative=self.generative,
+            config=self._config,
+            training=self.training,
+        )
+
+
+class DepthwiseConv3d(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        kernel_size: Union[int, List[int], Tuple[int, ...]] = 3,
+        stride: Union[int, List[int], Tuple[int, ...]] = 1,
+        padding: Union[int, Tuple[int, ...]] = 0,
+        dilation: int = 1,
+        depth_multiplier: int = 1,
+        bias: bool = False,
+        config: Dict = None,
+    ) -> None:
+        super().__init__()
+        if depth_multiplier <= 0:
+            raise ValueError("depth_multiplier must be a positive integer.")
+
+        self.in_channels = in_channels
+        self.depth_multiplier = depth_multiplier
+        self.out_channels = in_channels * depth_multiplier
+        self.kernel_size = make_ntuple(kernel_size, ndim=3)
+        self.stride = make_ntuple(stride, ndim=3)
+        self.dilation = dilation
+        _padding = make_ntuple(padding, 3)
+        self.padding = ()
+        for i in range(3):
+            if self.kernel_size[i] % 2 == 1 and self.stride[i] == 1:
+                self.padding += ((self.kernel_size[i] - 1) // 2,)
+            else:
+                self.padding += (_padding[i],)
+        self._config = config
+
+        self.kernel_volume = int(np.prod(self.kernel_size))
+        if (
+            self.kernel_volume > 1
+            or self.kernel_volume == 1
+            and self.stride != (1, 1, 1)
+        ):
+            self.kernel = nn.Parameter(
+                torch.zeros(self.kernel_volume, in_channels, depth_multiplier)
+            )
+        else:
+            self.kernel = nn.Parameter(torch.zeros(in_channels, depth_multiplier))
+
+        if bias:
+            self.bias = nn.Parameter(torch.zeros(self.out_channels))
+        else:
+            self.register_parameter("bias", None)
+
+        self.reset_parameters()
+
+    def extra_repr(self) -> str:
+        s = "{in_channels}, depth_multiplier={depth_multiplier}, kernel_size={kernel_size}"
+        if self.stride != (1,) * len(self.stride):
+            s += ", stride={stride}"
+        if self.dilation != 1:
+            s += ", dilation={dilation}"
+        if self.bias is None:
+            s += ", bias=False"
+        return s.format(**self.__dict__)
+
+    def reset_parameters(self) -> None:
+        std = 1 / math.sqrt(self.depth_multiplier * self.kernel_volume)
+        self.kernel.data.uniform_(-std, std)
+        if self.bias is not None:
+            self.bias.data.uniform_(-std, std)
+
+    def forward(self, input: SparseTensor) -> SparseTensor:
+
+        return F.depthwise_conv3d(
+            input,
+            weight=self.kernel,
+            kernel_size=self.kernel_size,
+            bias=self.bias,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+            depth_multiplier=self.depth_multiplier,
             config=self._config,
             training=self.training,
         )
